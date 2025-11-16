@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Needy Core Tetris</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-gradient-start: #fbc2eb;
+            --bg-gradient-end: #a6c1ee;
+            --window-bg: #d6d6d6;
+            --window-border-light: #ffffff;
+            --window-border-dark: #808080;
+            --window-title-bar: #000080;
+            --window-title-bar-text: #ffffff;
+            --game-bg: #2a0045;
+            --text-color: #000000;
+        }
+
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background: linear-gradient(to bottom, var(--bg-gradient-start), var(--bg-gradient-end));
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            font-size: 10px;
+        }
+
+        .window {
+            border: 2px solid;
+            border-top-color: var(--window-border-light);
+            border-left-color: var(--window-border-light);
+            border-right-color: var(--window-border-dark);
+            border-bottom-color: var(--window-border-dark);
+            background: var(--window-bg);
+            box-shadow: 3px 3px 0px rgba(0,0,0,0.2);
+        }
+
+        .window-title-bar {
+            background: var(--window-title-bar);
+            color: var(--window-title-bar-text);
+            padding: 4px 6px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .window-buttons {
+            display: flex;
+            gap: 2px;
+        }
+
+        .window-buttons > div {
+            width: 14px;
+            height: 14px;
+            background: var(--window-bg);
+            border: 2px solid;
+            border-top-color: var(--window-border-light);
+            border-left-color: var(--window-border-light);
+            border-right-color: var(--window-border-dark);
+            border-bottom-color: var(--window-border-dark);
+            font-size: 8px;
+            line-height: 10px;
+            text-align: center;
+            font-family: sans-serif;
+            font-weight: bold;
+        }
+
+        .window-content {
+            padding: 10px;
+            border-top: 2px solid var(--window-border-dark);
+        }
+   
+        .game-layout {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .stats-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 150px;
+        }
+
+    </style>
+</head>
+<body>
+    <main class="game-layout">
+        
+        <div class="stats-panel">
+            <div class="window stats-box">
+                <div class="window-title-bar">
+                    <span>SCORE</span>
+                    <div class="window-buttons"><div>_</div><div>X</div></div>
+                </div>
+                <div class="window-content" id="score-content">
+                    <p>SCORE:<span id="score">0</span></p>
+                    <p>LINES:<span id="lines">0</span></p>
+                    <p>LEVEL:<span id="level">1</span></p>
+                </div>
+            </div>
+
+            <div class="window stats-box">
+                <div class="window-title-bar">
+                    <span>NEXT</span>
+                    <div class="window-buttons"><div>_</div><div>X</div></div>
+                </div>
+                <div class="window-content" id="next-piece-content">
+                    <canvas id="next-piece-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-window" class="window">
+            <div class="window-title-bar">
+                <span>TETRIS.EXE</span>
+                <div class="window-buttons"><div>_</div><div>X</div></div>
+            </div>
+            <div class="window-content" style="padding:0;">
+                <canvas id="game-board"></canvas>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        
+        const canvas = document.getElementById('game-board');
+        const context = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('next-piece-canvas');
+        const nextContext = nextCanvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const linesEl = document.getElementById('lines');
+        const levelEl = document.getElementById('level');
+
+        const COLS = 10;
+        const ROWS = 20;
+        const BLOCK_SIZE = 30;
+
+        canvas.width = COLS * BLOCK_SIZE;
+        canvas.height = ROWS * BLOCK_SIZE;
+
+        nextCanvas.width = 4 * BLOCK_SIZE;
+        nextCanvas.height = 4 * BLOCK_SIZE;
+        
+        context.scale(BLOCK_SIZE, BLOCK_SIZE);
+        nextContext.scale(BLOCK_SIZE, BLOCK_SIZE);
+
+        const COLORS = {
+            I: '#00ffff',
+            O: '#ffc0cb',
+            T: '#9370db',
+            S: '#40e0d0',
+            Z: '#ff69b4',
+            J: '#87cefa',
+            L: '#ff00ff',
+            GRID: '#4a2c5a',
+            BG: '#2a0045'    
+        };
+
+        const PIECES = {
+            'I': {
+                shape: [
+                    [0, 0, 0, 0],
+                    [1, 1, 1, 1],
+                    [0, 0, 0, 0],
+                    [0, 0, 0, 0]
+                ],
+                color: COLORS.I
+            },
+            'O': {
+                shape: [
+                    [1, 1],
+                    [1, 1]
+                ],
+                color: COLORS.O
+            },
+            'T': {
+                shape: [
+                    [0, 1, 0],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: COLORS.T
+            },
+            'S': {
+                shape: [
+                    [0, 1, 1],
+                    [1, 1, 0],
+                    [0, 0, 0]
+                ],
+                color: COLORS.S
+            },
+            'Z': {
+                shape: [
+                    [1, 1, 0],
+                    [0, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: COLORS.Z
+            },
+            'J': {
+                shape: [
+                    [1, 0, 0],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: COLORS.J
+            },
+            'L': {
+                shape: [
+                    [0, 0, 1],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: COLORS.L
+            }
+        };
+
+        const PIECE_NAMES = 'IOTSZJL';
+
+        function drawBlock(ctx, x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, 1, 1);
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillRect(x, y, 1, 0.1);
+            ctx.fillRect(x, y, 0.1, 1);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(x, y + 0.9, 1, 0.1);
+            ctx.fillRect(x + 0.9, y, 0.1, 1);
+        }
+
+        /**
+         * Draws the entire game board background and grid lines.
+         * (UPDATED to also draw locked pieces!)
+         */
+        function drawGrid() {
+            // 1. Clear the canvas and fill with dark purple background
+            context.fillStyle = COLORS.BG;
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 2. Draw the grid lines
+            context.strokeStyle = COLORS.GRID;
+            context.lineWidth = 0.05; // Very thin line
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    context.strokeRect(c, r, 1, 1);
+                }
+            }
+            
+            // 3. (THIS IS THE FIX!) Draw all the locked pieces from our grid array
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    // If the grid cell is not 0, it has a color
+                    if (grid[r][c]) {
+                        // Draw that block!
+                        drawBlock(context, c, r, grid[r][c]);
+                    }
+                }
+            }
+        }
+
+        function drawPiece(piece, ctx = context) {
+            piece.shape.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value > 0) {
+                        drawBlock(ctx, piece.x + x, piece.y + y, piece.color);
+                    }
+                });
+            });
+        }
+
+        let grid;
+        let currentPiece;
+        let nextPiece;
+        let score;
+        let lines;
+        let level;
+        function createEmptyGrid() {
+            return Array.from({ length: ROWS }, () => 
+                Array(COLS).fill(0)
+            );
+        }
+
+        function getNewPiece() {
+            const name = PIECE_NAMES[Math.floor(Math.random() * PIECE_NAMES.length)];
+            const piece = PIECES[name];
+            
+            return {
+                ...piece,
+                x: Math.floor(COLS / 2) - Math.floor(piece.shape[0].length / 2),
+                y: 0
+            };
+        }
+
+        function resetGame() {
+            grid = createEmptyGrid();
+            score = 0;
+            lines = 0;
+            level = 1;
+            
+            currentPiece = getNewPiece(); // Get the first piece
+            nextPiece = getNewPiece();    // Get the *next* piece
+            
+            updateScore(0); // Update the UI
+            drawNextPiece(); // Draw the next piece
+        }
+        /**
+         * Draws the "Next Piece" in its preview box.
+         */
+        function drawNextPiece() {
+            // 1. Clear the 'next' canvas
+            nextContext.fillStyle = COLORS.BG;
+            nextContext.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+            
+            // 2. Center the piece (some are 3x3, some 4x4)
+            const offsetX = (4 - nextPiece.shape[0].length) / 2;
+            const offsetY = (4 - nextPiece.shape.length) / 2;
+            
+            // 3. Draw the piece using its shape, but with new x/y
+            nextPiece.shape.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value > 0) {
+                        drawBlock(nextContext, x + offsetX, y + offsetY, nextPiece.color);
+                    }
+                });
+            });
+        }
+
+        /**
+         * Updates the score, lines, and level.
+         */
+        function updateScore(linesCleared) {
+            // Score points based on lines cleared at once
+            const linePoints = [0, 100, 300, 500, 800]; // 0, 1, 2, 3, 4 lines
+            score += linePoints[linesCleared] * level;
+            lines += linesCleared;
+            
+            // Increase level every 10 lines
+            level = Math.floor(lines / 10) + 1;
+            
+            // Update the drop speed (faster as level increases)
+            dropInterval = 1000 / level; // 1000ms / level
+            
+            // Update the HTML on the page
+            scoreEl.textContent = score;
+            linesEl.textContent = lines;
+            levelEl.textContent = level;
+        }
+
+        /**
+         * Checks for and clears completed lines.
+         */
+        function clearLines() {
+            let linesCleared = 0;
+            
+            // Loop through the grid from the bottom row up
+            for (let r = ROWS - 1; r >= 0; r--) {
+                // Check if every cell in this row is NOT 0
+                if (grid[r].every(cell => cell > 0)) {
+                    // This row is full!
+                    linesCleared++;
+                    
+                    // Remove the full row
+                    grid.splice(r, 1);
+                    
+                    // Add a new empty row at the top
+                    grid.unshift(Array(COLS).fill(0));
+                    
+                    // We need to re-check this same row 'r' again
+                    // since the one above it just fell into its place
+                    r++;
+                }
+            }
+            
+            // If we cleared any lines, update the score
+            if (linesCleared > 0) {
+                updateScore(linesCleared);
+            }
+        }
+        let dropCounter = 0;
+        let dropInterval = 1000;
+        let lastTime = 0;
+
+        function isValidMove(piece, newX, newY, newShape) {
+            const shape = newShape || piece.shape;
+            
+            for (let y = 0; y < shape.length; y++) {
+                for (let x = 0; x < shape[0].length; x++) {
+                    if (shape[y][x] > 0) {
+                        let pX = newX + x;
+                        let pY = newY + y;
+                        
+                        if (pX < 0 || pX >= COLS) {
+                            return false;
+                        }
+                        
+                        if (pY >= ROWS) {
+                            return false;
+                        }
+                        
+                        if (pY >= 0 && grid[pY][pX] > 0) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            
+            return true;
+        }
+
+        /**
+         * Locks the current piece into the grid. (UPDATED)
+         */
+        function lockPiece() {
+            // --- ADD THIS LINE ---
+            console.log("--- lockPiece() called! Stamping piece... ---");
+
+            // 1. Stamp the piece onto the grid
+            currentPiece.shape.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value > 0) {
+                        grid[currentPiece.y + y][currentPiece.x + x] = currentPiece.color;
+                        
+                        // --- AND ADD THIS LINE ---
+                        console.log(`STAMPED at grid[${currentPiece.y + y}][${currentPiece.x + x}]`);
+                    }
+                });
+            });
+            
+            // 2. (NEW!) Clear any completed lines
+            clearLines();
+            
+            // 3. (NEW!) Get the next piece
+            currentPiece = nextPiece;
+            nextPiece = getNewPiece();
+            
+            // 4. (NEW!) Update the preview
+            drawNextPiece();
+            
+            // 5. (NEW!) Check for Game Over
+            if (!isValidMove(currentPiece, currentPiece.x, currentPiece.y)) {
+                alert("GAME OVER! Press OK to restart.");
+                resetGame();
+            }
+        }
+
+        function rotatePiece() {
+            const N = currentPiece.shape.length;
+            const newShape = Array.from({ length: N }, () => Array(N).fill(0));
+            
+            for (let y = 0; y < N; y++) {
+                for (let x = 0; x < N; x++) {
+                    newShape[x][N - 1 - y] = currentPiece.shape[y][x];
+                }
+            }
+            
+            if (isValidMove(currentPiece, currentPiece.x, currentPiece.y, newShape)) {
+                currentPiece.shape = newShape;
+            } else {
+                if (isValidMove(currentPiece, currentPiece.x - 1, currentPiece.y, newShape)) {
+                    currentPiece.x--;
+                    currentPiece.shape = newShape;
+                } else if (isValidMove(currentPiece, currentPiece.x + 1, currentPiece.y, newShape)) {
+                    currentPiece.x++;
+                    currentPiece.shape = newShape;
+                }
+            }
+        }
+
+        function handleKeydown(e) {
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    if (isValidMove(currentPiece, currentPiece.x - 1, currentPiece.y)) {
+                        currentPiece.x--;
+                    }
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    if (isValidMove(currentPiece, currentPiece.x + 1, currentPiece.y)) {
+                        currentPiece.x++;
+                    }
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    if (isValidMove(currentPiece, currentPiece.x, currentPiece.y + 1)) {
+                        currentPiece.y++;
+                        dropCounter = 0;
+                    } else {
+                        lockPiece();
+                    }
+                    break;
+                case 'ArrowUp':
+                case 'w':
+                case ' ':
+                    rotatePiece();
+                    break;
+            }
+        }
+
+        function setupControls() {
+            document.addEventListener('keydown', handleKeydown);
+        }
+
+        function gameLoop(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            
+            dropCounter += deltaTime;
+            
+            if (dropCounter > dropInterval) {
+                if (isValidMove(currentPiece, currentPiece.x, currentPiece.y + 1)) {
+                    currentPiece.y++;
+                } else {
+                    lockPiece();
+                }
+                dropCounter = 0;
+            }
+            
+            drawGrid();
+            drawPiece(currentPiece);
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            resetGame();
+            setupControls();
+            gameLoop();
+        }
+
+        startGame();
+    </script>
+</body>
+</html>
